@@ -65,6 +65,32 @@ const Hero = props => html`
 </div>
 </div>`;
 
+// Watch for notifications. As soon as a notification arrives, pass it on
+// to all subscribed components
+const watch = function() {
+  var l = window.location, proto = l.protocol.replace('http', 'ws');
+  var tid, wsURI = proto + '//' + l.host + '/api/watch'
+  var reconnect = function() {
+    var ws = new WebSocket(wsURI);
+    ws.onopen = () => console.log('ws connected');
+    ws.onmessage = function(ev) {
+      try {
+        var msg = JSON.parse(ev.data);
+        PubSub.publish(msg);
+        if (msg.name != 'metrics') console.log('ws->', msg);
+      } catch (e) {
+        console.log('Invalid ws frame:', ev.data);  // eslint-disable-line
+      }
+    };
+    ws.onclose = function() {
+      clearTimeout(tid);
+      tid = setTimeout(reconnect, 1000);
+      console.log('ws disconnected');
+    };
+  };
+  reconnect();
+};
+
 const Login = function(props) {
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
@@ -302,6 +328,7 @@ const Chart = function(props) {
 </div>`;
 };
 
+
 const App = function(props) {
   const [user, setUser] = useState('');
   const [config, setConfig] = useState({});
@@ -315,6 +342,7 @@ const App = function(props) {
   const login = function(u) {
     document.cookie = `access_token=${u.token};path=/;max-age=3600`;
     setUser(u.user);
+    watch();
     return getconfig();
   };
 
@@ -323,39 +351,12 @@ const App = function(props) {
     setUser('');
   };
 
-  // Watch for notifications. As soon as a notification arrives, pass it on
-  // to all subscribed components
-  const watch = function() {
-    var l = window.location, proto = l.protocol.replace('http', 'ws');
-    var tid, wsURI = proto + '//' + l.host + '/api/watch'
-    var reconnect = function() {
-      var ws = new WebSocket(wsURI);
-      ws.onopen = () => console.log('ws connected');
-      ws.onmessage = function(ev) {
-        try {
-          var msg = JSON.parse(ev.data);
-          PubSub.publish(msg);
-          if (msg.name != 'metrics') console.log('ws->', msg);
-        } catch (e) {
-          console.log('Invalid ws frame:', ev.data);  // eslint-disable-line
-        }
-      };
-      ws.onclose = function() {
-        clearTimeout(tid);
-        tid = setTimeout(reconnect, 1000);
-        console.log('ws disconnected');
-      };
-    };
-    reconnect();
-  };
-
   useEffect(() => {
     // Called once at init time
     PubSub.subscribe(msg => msg.name == 'config' && getconfig());
     fetch('/api/login', {headers: {Authorization: ''}})
         .then(r => r.json())
         .then(r => login(r))
-        .then(watch)
         .catch(err => setUser(''));
   }, []);
 
